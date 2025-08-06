@@ -42,7 +42,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         take: Number(limit),
         relations: [
           "variants",
-          "variants.prices", 
           "options",
           "options.values",
           "images",
