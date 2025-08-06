@@ -1,5 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import multer from "multer";
+import { promisify } from "util";
 
 function isValidAuthToken(token: string): boolean {
   try {
@@ -9,6 +12,24 @@ function isValidAuthToken(token: string): boolean {
     return false;
   }
 }
+
+// Configure multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept images only
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'));
+    }
+  }
+});
+
+const uploadSingle = promisify(upload.single('file'));
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
@@ -45,47 +66,93 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
     if (missingVars.length > 0) {
       logger.warn(`Missing R2 environment variables: ${missingVars.join(', ')}`);
       
-      // Return mock response for now
-      const mockUploadedFile = {
-        id: `file_upload_${Date.now()}`,
-        name: "uploaded-file.jpg", 
-        url: `https://your-r2-bucket.your-account.r2.cloudflarestorage.com/uploads/${Date.now()}-uploaded-file.jpg`,
-        type: "image/jpeg",
-        size: Math.floor(Math.random() * 1000000) + 100000,
-        created_at: new Date().toISOString(),
-        uploaded_by: "admin_user"
-      };
-
-      return res.status(201).json({
-        success: true,
-        message: "File uploaded successfully (mock - R2 not configured)",
-        file: mockUploadedFile,
+      return res.status(503).json({
+        success: false,
+        error: "R2 storage not configured",
         missing_env_vars: missingVars,
-        note: "Add R2 environment variables to enable real file uploads to Cloudflare R2"
+        note: "Add R2 environment variables to Railway to enable file uploads"
       });
     }
 
-    // TODO: Implement actual R2 upload
-    // For now, return success with R2-style URL
-    const fileName = `${Date.now()}-uploaded-file.jpg`;
-    const uploadedFile = {
-      id: `file_${Date.now()}`,
-      name: fileName,
-      url: `${r2Config.publicUrl}/${fileName}`,
-      type: "image/jpeg", 
-      size: Math.floor(Math.random() * 1000000) + 100000,
-      created_at: new Date().toISOString(),
-      uploaded_by: "admin_user"
-    };
+    // Parse multipart form data
+    try {
+      await uploadSingle(req as any, res as any);
+    } catch (multerError) {
+      logger.error("Multer parsing error:", multerError);
+      return res.status(400).json({
+        success: false,
+        error: "File parsing failed",
+        details: multerError instanceof Error ? multerError.message : "Invalid file format"
+      });
+    }
 
-    logger.info(`File upload ready for R2: ${fileName}`);
+    const file = (req as any).file;
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        error: "No file uploaded",
+        note: "Send file as 'file' field in multipart form data"
+      });
+    }
 
-    return res.status(201).json({
-      success: true,
-      message: "File upload configured for Cloudflare R2",
-      file: uploadedFile,
-      note: "R2 configuration detected - real upload implementation needed"
-    });
+    // Generate unique filename
+    const timestamp = Date.now();
+    const cleanName = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const fileName = `uploads/${timestamp}-${cleanName}`;
+
+    try {
+      // Create S3 client for R2
+      const s3Client = new S3Client({
+        region: 'auto',
+        endpoint: `https://${r2Config.accountId}.r2.cloudflarestorage.com`,
+        credentials: {
+          accessKeyId: r2Config.accessKeyId!,
+          secretAccessKey: r2Config.secretAccessKey!,
+        },
+      });
+
+      logger.info(`Uploading ${fileName} to R2 bucket: ${r2Config.bucketName}`);
+
+      // Upload to R2
+      const uploadCommand = new PutObjectCommand({
+        Bucket: r2Config.bucketName!,
+        Key: fileName,
+        Body: file.buffer,
+        ContentType: file.mimetype,
+        ContentLength: file.size,
+      });
+
+      await s3Client.send(uploadCommand);
+
+      const uploadedFile = {
+        id: `file_${timestamp}`,
+        name: file.originalname,
+        filename: fileName,
+        url: `${r2Config.publicUrl}/${fileName}`,
+        type: file.mimetype,
+        size: file.size,
+        created_at: new Date().toISOString(),
+        uploaded_by: "admin_user",
+        bucket: r2Config.bucketName,
+        r2_key: fileName
+      };
+
+      logger.info(`R2 upload successful: ${fileName} (${file.size} bytes)`);
+
+      return res.status(201).json({
+        success: true,
+        message: "File uploaded successfully to Cloudflare R2",
+        file: uploadedFile
+      });
+
+    } catch (uploadError) {
+      logger.error("R2 upload error:", uploadError);
+      return res.status(500).json({
+        success: false,
+        error: "R2 upload failed",
+        details: uploadError instanceof Error ? uploadError.message : "Unknown upload error"
+      });
+    }
 
   } catch (error) {
     logger.error("File upload error:", error);
