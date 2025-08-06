@@ -59,10 +59,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       let filteredProducts = allProducts;
       if (search) {
         const searchTerm = search.toString().toLowerCase();
-        filteredProducts = allProducts.filter(product => 
-          product.title?.toLowerCase().includes(searchTerm) ||
-          product.description?.toLowerCase().includes(searchTerm)
-        );
+        filteredProducts = allProducts.filter(product => {
+          const title = product.title || product.name || '';
+          const description = product.description || '';
+          return title.toLowerCase().includes(searchTerm) ||
+                 description.toLowerCase().includes(searchTerm);
+        });
       }
       
       // Apply pagination
