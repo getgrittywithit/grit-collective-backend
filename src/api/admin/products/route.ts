@@ -13,7 +13,7 @@ function isValidAuthToken(token: string): boolean {
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
-  const orderModuleService = req.scope.resolve(Modules.ORDER);
+  const productModuleService = req.scope.resolve(Modules.PRODUCT);
 
   try {
     // Check for Bearer token and validate it
@@ -33,34 +33,37 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     const { offset = 0, limit = 50 } = req.query;
 
-    const orders = await orderModuleService.listOrders(
+    const products = await productModuleService.listProducts(
       {},
       {
         skip: Number(offset),
         take: Number(limit),
         relations: [
-          "items",
-          "shipping_address", 
-          "billing_address",
-          "customer"
+          "variants",
+          "variants.prices",
+          "options",
+          "options.values",
+          "images",
+          "tags",
+          "type",
+          "collection"
         ]
       }
     );
 
-    const totalOrders = await orderModuleService.listOrders({}, { take: null });
+    const totalProducts = await productModuleService.listProducts({}, { take: null });
 
     return res.json({
-      orders,
-      count: totalOrders.length,
+      products,
+      count: totalProducts.length,
       offset: Number(offset),
       limit: Number(limit)
     });
 
   } catch (error) {
-    logger.error("Failed to fetch orders:", error);
+    logger.error("Failed to fetch products:", error);
     return res.status(500).json({
-      error: "Failed to fetch orders",
-      details: error.message
+      error: "Failed to fetch products"
     });
   }
 }
