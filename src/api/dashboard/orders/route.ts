@@ -43,8 +43,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         relations: [
           "items",
           "shipping_address", 
-          "billing_address",
-          "customer"
+          "billing_address"
         ]
       }
     );
