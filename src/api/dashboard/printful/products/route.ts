@@ -47,12 +47,28 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
 
       // Get products from Printful
-      const products = await printfulService.getProducts({
-        offset: Number(offset),
-        limit: Number(limit),
-        category_id,
-        search
-      });
+      const result = await printfulService.getCatalogProducts(category_id ? Number(category_id) : undefined);
+      
+      if (!result.success) {
+        throw new Error(result.error?.message || 'Failed to get products');
+      }
+      
+      const allProducts = result.data || [];
+      
+      // Apply search filter if provided
+      let filteredProducts = allProducts;
+      if (search) {
+        const searchTerm = search.toString().toLowerCase();
+        filteredProducts = allProducts.filter(product => 
+          product.title?.toLowerCase().includes(searchTerm) ||
+          product.description?.toLowerCase().includes(searchTerm)
+        );
+      }
+      
+      // Apply pagination
+      const startIndex = Number(offset);
+      const endIndex = startIndex + Number(limit);
+      const products = filteredProducts.slice(startIndex, endIndex);
 
       logger.info(`Retrieved ${products?.length || 0} Printful products`);
 
@@ -63,7 +79,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           offset: Number(offset),
           limit: Number(limit),
           count: products?.length || 0,
-          has_more: (products?.length || 0) >= Number(limit)
+          total: filteredProducts.length,
+          has_more: endIndex < filteredProducts.length
         },
         filters: {
           category_id,

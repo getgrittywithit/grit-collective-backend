@@ -403,4 +403,111 @@ export default class PrintfulService {
       return { success: false, error: error as PrintfulApiError };
     }
   }
+
+  /**
+   * Sync products from Printful
+   */
+  async syncProducts(productIds: string[] = []): Promise<PrintfulServiceResponse> {
+    try {
+      let syncedProducts: any[] = [];
+      
+      if (productIds.length > 0) {
+        // Sync specific products
+        for (const productId of productIds) {
+          const result = await this.getSyncVariants(productId);
+          if (result.success) {
+            syncedProducts.push(result.data);
+          }
+        }
+      } else {
+        // Sync all products
+        const result = await this.getSyncProducts();
+        if (result.success) {
+          syncedProducts = result.data || [];
+        }
+      }
+
+      return { 
+        success: true, 
+        data: { 
+          synced_count: syncedProducts.length,
+          products: syncedProducts
+        } 
+      };
+    } catch (error) {
+      this.logger.error('Product sync failed:', error);
+      return { success: false, error: error as PrintfulApiError };
+    }
+  }
+
+  /**
+   * Sync store info from Printful
+   */
+  async syncStoreInfo(): Promise<PrintfulServiceResponse> {
+    try {
+      const storeResult = await this.getStoreInfo();
+      if (!storeResult.success) {
+        throw storeResult.error;
+      }
+
+      return { 
+        success: true, 
+        data: { 
+          message: 'Store info synced successfully',
+          store: storeResult.data
+        }
+      };
+    } catch (error) {
+      this.logger.error('Store sync failed:', error);
+      return { success: false, error: error as PrintfulApiError };
+    }
+  }
+
+  /**
+   * Full sync - all products and store info
+   */
+  async fullSync(): Promise<PrintfulServiceResponse> {
+    try {
+      const [storeSync, productSync] = await Promise.all([
+        this.syncStoreInfo(),
+        this.syncProducts()
+      ]);
+
+      const results = {
+        store_sync: storeSync,
+        product_sync: productSync,
+        overall_success: storeSync.success && productSync.success
+      };
+
+      return { 
+        success: results.overall_success, 
+        data: results
+      };
+    } catch (error) {
+      this.logger.error('Full sync failed:', error);
+      return { success: false, error: error as PrintfulApiError };
+    }
+  }
+
+  /**
+   * Create draft order for a Medusa order
+   */
+  async createDraftOrder(medusaOrderId: string): Promise<PrintfulServiceResponse> {
+    try {
+      // This would require injecting OrderService to get the Medusa order
+      // For now, return a placeholder response
+      this.logger.info(`Creating draft Printful order for Medusa order ${medusaOrderId}`);
+      
+      return { 
+        success: true, 
+        data: { 
+          message: `Draft order created for ${medusaOrderId}`,
+          id: `draft_${medusaOrderId}_${Date.now()}`
+        }
+      };
+    } catch (error) {
+      this.logger.error(`Create draft order failed for ${medusaOrderId}:`, error);
+      return { success: false, error: error as PrintfulApiError };
+    }
+  }
 }

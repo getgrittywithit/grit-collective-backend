@@ -47,11 +47,13 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       }
 
       // Get orders from Printful
-      const orders = await printfulService.getOrders({
-        offset: Number(offset),
-        limit: Number(limit),
-        status
-      });
+      const result = await printfulService.getOrders(status?.toString(), Number(limit), Number(offset));
+      
+      if (!result.success) {
+        throw new Error(result.error?.message || 'Failed to get orders');
+      }
+      
+      const orders = result.data || [];
 
       logger.info(`Retrieved ${orders?.length || 0} Printful orders`);
 
