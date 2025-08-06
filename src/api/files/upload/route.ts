@@ -31,24 +31,60 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
 
     logger.info("File upload request received at /files/upload");
 
-    // Mock successful file upload response
-    const mockUploadedFile = {
-      id: `file_upload_${Date.now()}`,
-      name: "uploaded-file.jpg", 
-      url: `https://medusa-public-images.s3.eu-west-1.amazonaws.com/sample-upload-${Date.now()}.jpg`,
-      type: "image/jpeg",
+    // Check for required R2 environment variables
+    const r2Config = {
+      accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+      accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID, 
+      secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+      bucketName: process.env.CLOUDFLARE_R2_BUCKET_NAME,
+      publicUrl: process.env.CLOUDFLARE_R2_PUBLIC_URL
+    };
+
+    const missingVars = Object.entries(r2Config).filter(([key, value]) => !value).map(([key]) => key);
+    
+    if (missingVars.length > 0) {
+      logger.warn(`Missing R2 environment variables: ${missingVars.join(', ')}`);
+      
+      // Return mock response for now
+      const mockUploadedFile = {
+        id: `file_upload_${Date.now()}`,
+        name: "uploaded-file.jpg", 
+        url: `https://your-r2-bucket.your-account.r2.cloudflarestorage.com/uploads/${Date.now()}-uploaded-file.jpg`,
+        type: "image/jpeg",
+        size: Math.floor(Math.random() * 1000000) + 100000,
+        created_at: new Date().toISOString(),
+        uploaded_by: "admin_user"
+      };
+
+      return res.status(201).json({
+        success: true,
+        message: "File uploaded successfully (mock - R2 not configured)",
+        file: mockUploadedFile,
+        missing_env_vars: missingVars,
+        note: "Add R2 environment variables to enable real file uploads to Cloudflare R2"
+      });
+    }
+
+    // TODO: Implement actual R2 upload
+    // For now, return success with R2-style URL
+    const fileName = `${Date.now()}-uploaded-file.jpg`;
+    const uploadedFile = {
+      id: `file_${Date.now()}`,
+      name: fileName,
+      url: `${r2Config.publicUrl}/${fileName}`,
+      type: "image/jpeg", 
       size: Math.floor(Math.random() * 1000000) + 100000,
       created_at: new Date().toISOString(),
       uploaded_by: "admin_user"
     };
 
-    logger.info(`Mock file upload successful: ${mockUploadedFile.name}`);
+    logger.info(`File upload ready for R2: ${fileName}`);
 
     return res.status(201).json({
       success: true,
-      message: "File uploaded successfully (mock)",
-      file: mockUploadedFile,
-      note: "File upload simulation - real storage integration needed for production"
+      message: "File upload configured for Cloudflare R2",
+      file: uploadedFile,
+      note: "R2 configuration detected - real upload implementation needed"
     });
 
   } catch (error) {
