@@ -1,9 +1,8 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
-import { ContainerRegistrationKeys, Modules } from "@medusajs/framework/utils";
+import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
 
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
   const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
-  const userModuleService = req.scope.resolve(Modules.USER);
 
   try {
     const { email, password } = req.body as { email: string; password: string };
@@ -14,14 +13,16 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       });
     }
 
-    // For now, accept any admin email and password (you should implement proper auth)
-    if (email === "admin@gritcollective.com") {
-      // Generate a simple JWT token (in production, use proper JWT with expiration)
+    // Simple authentication - accept admin credentials
+    if (email === "admin@gritcollective.com" && password === "admin123") {
+      // Generate a simple token
       const token = Buffer.from(`${email}:${Date.now()}`).toString('base64');
+      
+      logger.info(`Admin user authenticated: ${email}`);
       
       return res.json({
         user: {
-          id: "admin_user",
+          id: "admin_user", 
           email: email,
           first_name: "Admin",
           last_name: "User"
@@ -30,6 +31,7 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       });
     }
 
+    logger.warn(`Invalid login attempt for: ${email}`);
     return res.status(401).json({
       error: "Invalid credentials"
     });
@@ -40,4 +42,15 @@ export async function POST(req: MedusaRequest, res: MedusaResponse) {
       error: "Authentication failed"
     });
   }
+}
+
+export async function GET(req: MedusaRequest, res: MedusaResponse) {
+  return res.json({
+    message: "Admin auth endpoint is working",
+    endpoints: {
+      login: "POST /admin/auth",
+      orders: "GET /admin/orders", 
+      users: "GET /admin/users"
+    }
+  });
 }
