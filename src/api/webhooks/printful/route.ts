@@ -13,7 +13,7 @@ export async function POST(
 
   try {
     const signature = req.headers['x-printful-signature'] as string;
-    const payload: PrintfulWebhookPayload = req.body;
+    const payload: PrintfulWebhookPayload = req.body as PrintfulWebhookPayload;
 
     if (!payload || !payload.type) {
       return res.status(400).json({

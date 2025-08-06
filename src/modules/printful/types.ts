@@ -273,10 +273,11 @@ export interface PrintfulAvailabilityStatus {
 }
 
 // Error Types
-export interface PrintfulError {
+export interface PrintfulError extends Error {
   message: string;
   reason: string;
   code: number;
+  name: string;
 }
 
 export class PrintfulApiError extends Error {

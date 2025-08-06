@@ -1,7 +1,6 @@
 import { 
-  MedusaService,
   OrderDTO,
-  OrderItemDTO
+  OrderLineItemDTO
 } from "@medusajs/framework/types";
 import { Logger } from "@medusajs/framework/types";
 import {
@@ -21,13 +20,12 @@ import {
   PrintfulCatalogVariant
 } from "./types";
 
-export default class PrintfulService extends MedusaService {
+export default class PrintfulService {
   private config: PrintfulConfig;
   private logger: Logger;
   private baseUrl: string;
 
   constructor(container: any, options: any) {
-    super(container);
     
     this.logger = container.logger;
     this.baseUrl = options?.baseUrl || 'https://api.printful.com';
@@ -74,7 +72,8 @@ export default class PrintfulService extends MedusaService {
         throw new PrintfulApiError({
           message: responseData.error?.message || 'Unknown API error',
           reason: responseData.error?.reason || 'api_error',
-          code: responseData.code
+          code: responseData.code,
+          name: 'PrintfulApiError'
         });
       }
 
@@ -206,7 +205,7 @@ export default class PrintfulService extends MedusaService {
   async getSyncVariants(syncProductId: string): Promise<PrintfulServiceResponse<PrintfulSyncVariant[]>> {
     try {
       const response = await this.makeRequest<PrintfulSyncVariant[]>(`/sync/products/${syncProductId}`);
-      return { success: true, data: response.result.sync_variants };
+      return { success: true, data: response.result as PrintfulSyncVariant[] };
     } catch (error) {
       this.logger.error(`Failed to get sync variants for product ${syncProductId}:`, error);
       return { success: false, error: error as PrintfulApiError };
@@ -237,7 +236,7 @@ export default class PrintfulService extends MedusaService {
   async getCatalogVariants(productId: number): Promise<PrintfulServiceResponse<PrintfulCatalogVariant[]>> {
     try {
       const response = await this.makeRequest<PrintfulCatalogVariant[]>(`/products/${productId}`);
-      return { success: true, data: response.result.variants };
+      return { success: true, data: response.result as PrintfulCatalogVariant[] };
     } catch (error) {
       this.logger.error(`Failed to get catalog variants for product ${productId}:`, error);
       return { success: false, error: error as PrintfulApiError };
@@ -315,23 +314,23 @@ export default class PrintfulService extends MedusaService {
     const recipient: PrintfulRecipient = {
       name: `${shippingAddress.first_name} ${shippingAddress.last_name}`,
       company: shippingAddress.company || undefined,
-      address1: shippingAddress.address_1,
+      address1: shippingAddress.address_1 || '',
       address2: shippingAddress.address_2 || undefined,
-      city: shippingAddress.city,
+      city: shippingAddress.city || '',
       state_code: shippingAddress.province || '',
       state_name: shippingAddress.province || '',
       country_code: shippingAddress.country_code?.toUpperCase() || 'US',
       country_name: shippingAddress.country_code?.toUpperCase() || 'US',
-      zip: shippingAddress.postal_code,
+      zip: shippingAddress.postal_code || '',
       phone: shippingAddress.phone || undefined,
-      email: order.email
+      email: order.email || ''
     };
 
-    const items: CreatePrintfulOrderItem[] = order.items?.map((item: OrderItemDTO) => ({
-      external_variant_id: item.variant_sku || item.variant_id,
+    const items: CreatePrintfulOrderItem[] = order.items?.map((item: OrderLineItemDTO) => ({
+      external_variant_id: item.variant_sku || item.id || '',
       quantity: item.quantity,
-      retail_price: (item.unit_price / 100).toString(), // Convert from cents
-      name: item.title
+      retail_price: ((item.unit_price || 0) / 100).toString(), // Convert from cents
+      name: item.title || ''
     })) || [];
 
     return {

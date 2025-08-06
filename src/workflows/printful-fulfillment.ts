@@ -18,6 +18,7 @@ interface CreatePrintfulOrderOutput {
   printful_external_id: string;
   confirmed: boolean;
   success: boolean;
+  already_exists?: boolean;
   error?: string;
 }
 

@@ -16,7 +16,7 @@ export async function POST(
   const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
 
   try {
-    const { medusa_order_id, confirm_immediately = false }: FulfillOrderRequest = req.body;
+    const { medusa_order_id, confirm_immediately = false }: FulfillOrderRequest = req.body as FulfillOrderRequest;
 
     if (!medusa_order_id) {
       return res.status(400).json({
@@ -78,7 +78,7 @@ export async function POST(
       const confirmResult = await printfulService.confirmOrder(printfulOrder.id.toString());
       
       if (!confirmResult.success) {
-        logger.warn(`Created Printful order ${printfulOrder.id} but failed to confirm:`, confirmResult.error);
+        logger.warn(`Created Printful order ${printfulOrder.id} but failed to confirm:`);
         return res.json({
           message: "Printful order created but confirmation failed",
           printful_order_id: printfulOrder.id,
