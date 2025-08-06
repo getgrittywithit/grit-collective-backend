@@ -18,7 +18,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         webhook_secret_configured: !!process.env.PRINTFUL_WEBHOOK_SECRET
       };
 
-      logger.info("Printful environment check:", envCheck);
+      logger.info(`Printful environment check: ${JSON.stringify(envCheck)}`);
 
       if (!envCheck.api_key_configured) {
         return res.json({
@@ -32,11 +32,11 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
       // Try to resolve and test Printful service
       try {
-        const printfulService = req.scope.resolve("printfulService");
+        const printfulService: any = req.scope.resolve("printfulService");
         logger.info("PrintfulService resolved successfully");
 
         const connectionTest = await printfulService.testConnection();
-        logger.info("Printful connection test result:", connectionTest);
+        logger.info(`Printful connection test result: ${JSON.stringify(connectionTest)}`);
 
         return res.json({
           success: connectionTest.success,
