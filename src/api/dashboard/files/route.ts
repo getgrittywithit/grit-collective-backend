@@ -1,5 +1,6 @@
 import { MedusaRequest, MedusaResponse } from "@medusajs/framework/http";
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils";
+import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 function isValidAuthToken(token: string): boolean {
   try {
@@ -8,6 +9,22 @@ function isValidAuthToken(token: string): boolean {
   } catch {
     return false;
   }
+}
+
+function getContentType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase();
+  const types: { [key: string]: string } = {
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'svg': 'image/svg+xml',
+    'webp': 'image/webp',
+    'pdf': 'application/pdf',
+    'txt': 'text/plain',
+    'json': 'application/json'
+  };
+  return types[ext || ''] || 'application/octet-stream';
 }
 
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
@@ -33,26 +50,87 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     logger.info(`Fetching files via dashboard: offset=${offset}, limit=${limit}`);
 
-    // Return empty files list for now - file management would need to be implemented
-    // This could integrate with Medusa's file service or external storage like S3
-    const mockFiles = [
-      {
-        id: "file_1",
-        name: "sample-product-image.jpg",
-        url: "https://medusa-public-images.s3.eu-west-1.amazonaws.com/tee-black-front.png",
-        type: "image/jpeg",
-        size: 1024000,
-        created_at: new Date().toISOString()
-      }
-    ];
+    // Check for required R2 environment variables
+    const r2Config = {
+      accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
+      accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY,
+      bucketName: process.env.CLOUDFLARE_R2_BUCKET_NAME,
+      publicUrl: process.env.CLOUDFLARE_R2_PUBLIC_URL
+    };
 
-    return res.json({
-      files: mockFiles,
-      count: mockFiles.length,
-      offset: Number(offset),
-      limit: Number(limit),
-      note: "File management system not fully implemented - showing sample data"
-    });
+    const missingVars = Object.entries(r2Config).filter(([key, value]) => !value).map(([key]) => key);
+    
+    if (missingVars.length > 0) {
+      logger.warn(`Missing R2 environment variables: ${missingVars.join(', ')}`);
+      
+      return res.status(503).json({
+        files: [],
+        count: 0,
+        offset: Number(offset),
+        limit: Number(limit),
+        error: "R2 storage not configured",
+        missing_env_vars: missingVars
+      });
+    }
+
+    try {
+      // Create S3 client for R2
+      const s3Client = new S3Client({
+        region: 'auto',
+        endpoint: `https://${r2Config.accountId}.r2.cloudflarestorage.com`,
+        credentials: {
+          accessKeyId: r2Config.accessKeyId!,
+          secretAccessKey: r2Config.secretAccessKey!,
+        },
+      });
+
+      logger.info(`Listing files in R2 bucket: ${r2Config.bucketName}`);
+
+      // List objects in R2 bucket
+      const listCommand = new ListObjectsV2Command({
+        Bucket: r2Config.bucketName!,
+        MaxKeys: Number(limit),
+        StartAfter: Number(offset) > 0 ? `uploads/${offset}` : undefined
+      });
+
+      const listResult = await s3Client.send(listCommand);
+      
+      const files = (listResult.Contents || []).map(obj => ({
+        id: `file_${obj.Key?.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        name: obj.Key?.split('/').pop() || obj.Key || 'unknown',
+        filename: obj.Key || '',
+        url: `${r2Config.publicUrl}/${obj.Key}`,
+        type: getContentType(obj.Key || ''),
+        size: obj.Size || 0,
+        created_at: obj.LastModified?.toISOString() || new Date().toISOString(),
+        r2_key: obj.Key,
+        bucket: r2Config.bucketName
+      }));
+
+      logger.info(`Found ${files.length} files in R2 bucket`);
+
+      return res.json({
+        files,
+        count: listResult.KeyCount || 0,
+        total: listResult.KeyCount || 0,
+        offset: Number(offset),
+        limit: Number(limit),
+        bucket: r2Config.bucketName,
+        next_offset: listResult.IsTruncated ? (Number(offset) + Number(limit)) : null
+      });
+
+    } catch (r2Error) {
+      logger.error("R2 list files error:", r2Error);
+      return res.status(500).json({
+        files: [],
+        count: 0,
+        offset: Number(offset),
+        limit: Number(limit),
+        error: "Failed to list files from R2",
+        details: r2Error instanceof Error ? r2Error.message : "Unknown R2 error"
+      });
+    }
 
   } catch (error) {
     logger.error("Failed to fetch files:", error);
